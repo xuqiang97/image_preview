@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>图片预览</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .card { max-width: 860px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+    .img-wrap { width: 160px; height: 160px; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; display: grid; place-items: center; background: #f9fafb; }
+    img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    button { border: 1px solid #e5e7eb; background: #fff; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+    button:hover { background: #f9fafb; }
+    button:disabled { cursor: not-allowed; opacity: 0.5; }
+    .input { width: 95%; padding: 10px; border-radius: 10px; border: 1px solid #e5e7eb; margin-top: 10px; }
+    .error { color: #b91c1c; font-size: 12px; margin-top: 6px; display: none; }
+    .ok { color: #065f46; font-size: 12px; margin-top: 6px; display: none; }
+    .toast {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      padding: 10px 12px; border-radius: 999px; border: 1px solid #e5e7eb;
+      background: rgba(255,255,255,.95); box-shadow: 0 6px 20px rgba(0,0,0,.08);
+      font-size: 13px; display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2 style="margin:0 0 12px 0;">图片预览</h2>
+
+    <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+      <div class="img-wrap" title="缩略图预览">
+        <img id="thumb" alt="图片预览" />
+      </div>
+
+      <div style="flex:1; min-width:320px;">
+        <input id="urlInput" class="input" type="text" placeholder="输入图片URL" />
+        <div id="valError" class="error">URL 不合法：必须以 http:// 或 https:// 开头</div>
+        <div id="valOk" class="ok">URL 格式合法，预览已更新</div>
+
+        <div class="actions">
+          <button id="copyBtn" type="button">复制链接</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // ====== DOM ======
+    const thumb = document.getElementById("thumb");
+    const urlInput = document.getElementById("urlInput");
+    const copyBtn = document.getElementById("copyBtn");
+    const valError = document.getElementById("valError");
+    const valOk = document.getElementById("valOk");
+    const toast = document.getElementById("toast");
+
+    // 当前使用的图片URL
+    let currentImageUrl = "";
+
+    // ====== 工具函数 ======
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.style.display = "block";
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => (toast.style.display = "none"), 1600);
+    }
+
+    function isValidHttpUrl(url) {
+      if (!url) return false;
+      try {
+        const u = new URL(url);
+        return u.protocol === "http:" || u.protocol === "https:";
+      } catch {
+        return false;
+      }
+    }
+
+    // 简单防抖：输入停 300ms 才更新预览
+    function debounce(fn, wait = 300) {
+      let t = null;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), wait);
+      };
+    }
+
+    function setThumb(url) {
+      thumb.src = url;
+    }
+
+    // ====== 图片加载失败兜底 ======
+    thumb.onerror = () => {
+      const placeholder = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="320" height="320">
+          <rect width="100%" height="100%" fill="#f3f4f6"/>
+          <text x="50%" y="48%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280" font-size="16">
+            图片加载失败
+          </text>
+          <text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" fill="#9ca3af" font-size="12">
+            可能403/失效/防盗链
+          </text>
+        </svg>
+      `);
+      if (thumb.src !== placeholder) {
+        thumb.src = placeholder;
+      }
+    };
+
+    // ====== 处理URL输入 ======
+    const handleUrlInput = debounce(() => {
+      const url = urlInput.value.trim();
+
+      if (!url) {
+        valError.style.display = "none";
+        valOk.style.display = "none";
+        currentImageUrl = "";
+        thumb.src = "";
+        copyBtn.disabled = true;
+        return;
+      }
+
+      if (!isValidHttpUrl(url)) {
+        valError.style.display = "block";
+        valOk.style.display = "none";
+        return;
+      }
+
+      valError.style.display = "none";
+      valOk.style.display = "block";
+      currentImageUrl = url;
+      setThumb(url);
+      copyBtn.disabled = false;
+    }, 300);
+
+    urlInput.addEventListener("input", handleUrlInput);
+
+    // ====== 复制链接 ======
+    async function copyToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+
+    copyBtn.addEventListener("click", async () => {
+      if (!currentImageUrl) return;
+      try {
+        await copyToClipboard(currentImageUrl);
+        showToast("已复制链接");
+      } catch (e) {
+        console.error(e);
+        showToast("复制失败，请手动复制");
+      }
+    });
+
+    // ====== 初始化 ======
+    copyBtn.disabled = true;
+  </script>
+</body>
+</html>
